@@ -1,6 +1,6 @@
-##############################################################################################################
-# THIS CODE APPLIES A BASIC IMAGE PROCESSING ALGORITHM TO AN IMAGE. THIS MASKS THE GREEN COLOR OF THE IMAGE. #
-##############################################################################################################
+#############################################################################################################
+# THIS IS A MUCH MORE ADVANCED IMAGE PROCESSING PROGRAM. THIS APPLIES FILTERING TO GET A MUCH CLEANER MASK. #
+#############################################################################################################
 
 # first we import OpenCV 
 import cv2 as cv 
@@ -21,9 +21,16 @@ while True:
     cv.imshow("PiCar Video", frame)
     # now we convert the frame to the HSV color space
     hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
+
+    # Apply a blur to the image to get rid of noise
+    blur = cv.GaussianBlur(hsv, (5, 5), 0)
+
+    # Apply errode and dilate to get rid of small blobs from stray pixels
+    erode = cv.erode(blur, None, iterations=2)
+    dilate = cv.dilate(erode, None, iterations=2)
     # I found that these ranges work well for green
     # However you can change the ranges to find other colors
-    mask = cv.inRange(hsv, (40, 50, 90), (100, 255, 220))
+    mask = cv.inRange(dilate, (40, 50, 90), (100, 255, 220))
     # now we display the mask
     cv.imshow("Mask", mask)
     # we use the waitKey function to wait for a key press
