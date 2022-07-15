@@ -1,6 +1,10 @@
+from time import time
 import keras
 import numpy as np
 import cv2 as cv
+import time
+import sys
+import socketio
 
 import argparse
 
@@ -26,12 +30,23 @@ def main():
 
     # Load the controls window
     imageControls()
+    carControls()
+
+    sio = socketio.Client()
+    # we try to connect to the PiCar
+    try:
+        sio.connect('http://192.168.0.10:3000')
+    # if we fail we print out an error message and exit the program
+    except:
+        print("Failed to connect to PiCar Socket Error")
+        print("Check that your laptop is connected to the PiCar network")
+        exit()
 
     # Run the control loop
-    controlLoop(args.ip_address)
+    controlLoop(args.ip_address, sio)
 
 
-def controlLoop(ip):
+def controlLoop(ip, sio):
     
     cap = cv.VideoCapture("http://%s:8080/?action=stream" % ip)
     
@@ -42,9 +57,13 @@ def controlLoop(ip):
     print("--------------------------------------------------------------------------")
     print("Capturing video from {}".format(ip))
     print("Press 'q' to quit")
+    print("----------------------------- Sending Commands ---------------------------")
+
+    fps = 0
 
     # we create a while loop to get and display the video
     while True:
+        start = time.time()
         # we get the next frame from the video stored in frame
         # ret is a boolean that tells us if the frame was successfully retrieved
         # ret is short for return
@@ -52,21 +71,32 @@ def controlLoop(ip):
         # we display the frame
         try:
             cv.imshow("Mask", imageProcessing(frame))
-            fpsCounter(frame, 24)
+            fpsCounter(frame, fps)
             cv.imshow("PiCar Video", frame)
         except:
             print("Error displaying frame")
             print("Have you connected to the PiCar?")
             print("Is %s the correct ip address?" % ip)
             exit()
+        speed, steering_offset,  = getCarControls()
+        sendCommands(speed, steering_offset, sio)
         # we use the waitKey function to wait for a key press
         # if the key is q then we break out of the loop
         if cv.waitKey(1) & 0xFF == ord('q'):
             break
+        end = time.time()
+        # we calculate the fps
+        current_fps = 1 / (end - start)
+        # we update the fps
+        fps = lerp(fps, current_fps, 0.08)
+
+def lerp(a, b, t):
+    return a + (b - a) * t
+
 
 def imageProcessing(frame):
 
-    hl, sl, vl, hu, su, vu = getControls()
+    hl, sl, vl, hu, su, vu = getImageControls()
 
     # we convert the frame to the HSV color space
     hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
@@ -83,13 +113,12 @@ def imageProcessing(frame):
     return blur
 
 def fpsCounter(image ,fps):
-    cv.putText(image, "FPS: ", (50,50), cv.FONT_HERSHEY_SIMPLEX, 1.5, (255,255,255))
+    cv.putText(image, "FPS:" + str(round(fps, ndigits=2)), (50,50), cv.FONT_HERSHEY_SIMPLEX, 1.5, (255,255,255))
 
+def null(x):
+    pass
 
 def imageControls():
-    def null(x):
-        pass
-
     # create cv2 window with 3 sliders
     cv.namedWindow('Controls', cv.WINDOW_NORMAL)
     cv.resizeWindow('Controls', 300, 300)
@@ -101,10 +130,9 @@ def imageControls():
     cv.createTrackbar('Hue Upper', 'Controls', 93, 255, null)
     cv.createTrackbar('Sat Upper', 'Controls', 194, 255, null)
     cv.createTrackbar('Val Upper', 'Controls', 245, 255, null)
-
     
 
-def getControls():
+def getImageControls():
     # get the current values of the trackbars
     hl = cv.getTrackbarPos('Hue Lower', 'Controls')
     sl = cv.getTrackbarPos('Sat Lower', 'Controls')
@@ -113,6 +141,24 @@ def getControls():
     su = cv.getTrackbarPos('Sat Upper', 'Controls')
     vu = cv.getTrackbarPos('Val Upper', 'Controls')
     return hl, sl, vl, hu, su, vu
+
+def carControls():
+    cv.createTrackbar('Speed', 'Controls', 50, 100, null)
+    cv.createTrackbar('Steering Offset', 'Controls', 90 , 180, null)
+
+def getCarControls():
+    speed = cv.getTrackbarPos('Speed', 'Controls')
+    steering_offset = cv.getTrackbarPos('Steering Offset', 'Controls')
+
+    return speed, steering_offset
+
+def sendCommands(speed, steering, sio):
+    sio.emit('drive', speed)
+    sio.emit('steer', steering)
+    sys.stdout.write("\rspeed: %s steering angle: %s  " % (speed, steering))
+    sys.stdout.flush()
+
+
 
 
 def printConfig(args):
