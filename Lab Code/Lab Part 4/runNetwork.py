@@ -1,5 +1,5 @@
 from time import time
-import keras
+import keras as ks
 import numpy as np
 import cv2 as cv
 import time
@@ -19,7 +19,6 @@ def parse_arguments():
     parser.add_argument('-i', '--ip_address', type=str, default="192.168.0.10", required=False, help='Car ip address')
     parser.add_argument('-s', '--speed', type=int, default=50, required=False, help='Car speed value from 0 to 100')
     return parser.parse_args()
-
 
 def main():
     printBanner()
@@ -42,11 +41,14 @@ def main():
         print("Check that your laptop is connected to the PiCar network")
         exit()
 
+    # load in the model
+    model = ks.models.load_model(args.neural_network_file)
+
     # Run the control loop
-    controlLoop(args.ip_address, sio)
+    controlLoop(args.ip_address, sio, model)
 
 
-def controlLoop(ip, sio):
+def controlLoop(ip, sio, model):
     
     cap = cv.VideoCapture("http://%s:8080/?action=stream" % ip)
     
@@ -70,7 +72,8 @@ def controlLoop(ip, sio):
         ret, frame = cap.read()
         # we display the frame
         try:
-            cv.imshow("Mask", imageProcessing(frame))
+            mask = imageProcessing(frame)
+            cv.imshow("Mask", mask)
             fpsCounter(frame, fps)
             cv.imshow("PiCar Video", frame)
         except:
@@ -79,16 +82,17 @@ def controlLoop(ip, sio):
             print("Is %s the correct ip address?" % ip)
             exit()
         speed, steering_offset,  = getCarControls()
+        #steering = predictSteering(mask, model)
         sendCommands(speed, steering_offset, sio)
         # we use the waitKey function to wait for a key press
         # if the key is q then we break out of the loop
         if cv.waitKey(1) & 0xFF == ord('q'):
             break
-        end = time.time()
+        #end = time.time()
         # we calculate the fps
-        current_fps = 1 / (end - start)
+        #current_fps = 1 / (end - start)
         # we update the fps
-        fps = lerp(fps, current_fps, 0.08)
+        #fps = lerp(fps, current_fps, 0.08)
 
 def lerp(a, b, t):
     return a + (b - a) * t
@@ -115,7 +119,7 @@ def imageProcessing(frame):
 def fpsCounter(image ,fps):
     cv.putText(image, "FPS:" + str(round(fps, ndigits=2)), (50,50), cv.FONT_HERSHEY_SIMPLEX, 1.5, (255,255,255))
 
-def null(x):
+def null():
     pass
 
 def imageControls():
@@ -143,7 +147,7 @@ def getImageControls():
     return hl, sl, vl, hu, su, vu
 
 def carControls():
-    cv.createTrackbar('Speed', 'Controls', 50, 100, null)
+    cv.createTrackbar('Speed', 'Controls', 0, 100, null)
     cv.createTrackbar('Steering Offset', 'Controls', 90 , 180, null)
 
 def getCarControls():
@@ -158,8 +162,16 @@ def sendCommands(speed, steering, sio):
     sys.stdout.write("\rspeed: %s steering angle: %s  " % (speed, steering))
     sys.stdout.flush()
 
-
-
+def predictSteering(image, model):
+    image = cv.resize(image, (100, 66))
+    image = np.array(image, np.float32)
+    image_arr = []
+    image_arr.append(image)
+    image = np.array(image_arr, np.float32)
+    print(image.size)
+    print(image.shape)
+    prediction = model.predict(image)
+    return (prediction[0][0])
 
 def printConfig(args):
     print("--------------------------------- Config ---------------------------------")
@@ -180,3 +192,4 @@ def printBanner():
 
 if __name__ == '__main__':
     main()
+  
